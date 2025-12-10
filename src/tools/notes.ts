@@ -1,6 +1,25 @@
 import { type App, type CachedMetadata, MarkdownView, TFile } from 'obsidian'
 import type { ResultNote } from '../globals'
 
+/**
+ * Extracts the PDF page number from content based on the offset, looking for page markers in format: `#Page N^page=N`
+ */
+function getPdfPageFromOffset(content: string, offset: number): number | null {
+  if (!content.includes('#Page ') || offset > content.length) return null // return early if the inputs do not look valid
+
+  const textBeforeOffset = content.substring(0, offset)
+
+  let lastMatch: RegExpExecArray | null = null
+  let match: RegExpExecArray | null
+  while (
+    (match = /\n#Page ([0-9])+\^page=\1/g.exec(textBeforeOffset)) !== null
+  ) {
+    lastMatch = match
+  }
+
+  return lastMatch ? parseInt(lastMatch[1], 10) : null
+}
+
 export async function openNote(
   app: App,
   item: ResultNote,
@@ -25,8 +44,18 @@ export async function openNote(
   })
 
   if (!alreadyOpenAndPinned) {
-    // Open the note normally
-    await app.workspace.openLinkText(item.path, '', newLeaf ? 'split' : newPane)
+    // For PDFs, extract page number and append to path
+    // TODO if we knew the view type for PDF could we reuse an existing view?
+    const isPdf = item.path.toLowerCase().endsWith('.pdf')
+    let linkPath = item.path
+    if (isPdf && offset > 0) {
+      const pageNum = getPdfPageFromOffset(item.content, offset)
+      if (pageNum !== null && pageNum !== 1) {
+        linkPath = `${item.path}#page=${pageNum}`
+      }
+    }
+
+    await app.workspace.openLinkText(linkPath, '', newLeaf ? 'split' : newPane)
   }
 
   const view = app.workspace.getActiveViewOfType(MarkdownView)
